@@ -19,6 +19,18 @@ let table = {
   tableau: [[],[],[],[],[],[],[]],
 }
 
+let walletConnected = false
+let currentWalletAddress = null
+let network = "devnet"
+let gameStartedAt = null
+let secureApiBase = "http://localhost:8787"
+
+const QUESTS = [
+  { id: "daily_win", label: "Daily: Win 1 game", cadence: "daily", target: 1 },
+  { id: "weekly_wins", label: "Weekly: Win 3 games", cadence: "weekly", target: 3 },
+  { id: "monthly_wins", label: "Monthly: Win 10 games", cadence: "monthly", target: 10 }
+]
+
 //query selectors
 //card piles related
 const $stock = document.querySelector("#stock");
@@ -40,7 +52,15 @@ const $fullScreenContainer = document.querySelector(".full-screen-container")
 const $btnClose = document.querySelector(".btn-close")
 const $contentAbout = document.querySelector(".content-about")
 const $contentWin = document.querySelector(".content-win")
-
+const $connectWalletBtn = document.querySelector("#connect-wallet-btn")
+const $walletStatus = document.querySelector("#wallet-status")
+const $networkSelect = document.querySelector("#network-select")
+const $gameRoot = document.querySelector("#game-root")
+const $questList = document.querySelector("#quest-list")
+const $leaderboardList = document.querySelector("#leaderboard-list")
+const $bestTime = document.querySelector("#best-time")
+const $totalWins = document.querySelector("#total-wins")
+const $campaignEnds = document.querySelector("#campaign-ends")
 
 $foundations.forEach(found => foundIDs.push(found.id))
 $tableaus.forEach(tab => tabIDs.push(tab.id))
@@ -453,6 +473,7 @@ function checkWinCondition(){
     // alert("YOU WIN! This is a temporal message")
     $fullScreenContainer.classList.remove("hidden")
     $contentWin.classList.remove("hidden")
+    handleWin()
   }
 }
 
@@ -713,7 +734,7 @@ $btnGear.addEventListener("click", () => {
 
 $btnRestart.addEventListener("click", () => {
   $menu.classList.toggle("menu-show")
-  newGame()
+  if(walletConnected) newGame()
 })
 
 $btnDesign.addEventListener("click", () =>{
@@ -731,6 +752,7 @@ $btnClose.addEventListener("click", promptAction)
 
 //mouse events on window
 window.onmousedown = () => {
+  if(!walletConnected) return
   isMouseDown = true
   checkDeck()
 }
@@ -753,7 +775,7 @@ window.onmousemove = (e) => {
 }
 
 //start a new game on page load
-newGame()
+bootSolanaMode()
 
 // - - - - - - - - - - debugging tools - - - - - - - - - -
 
@@ -791,4 +813,155 @@ function checkDeck(){
   } else if(fullDeck.length > 52){
     console.log("there's extra cards: "+fullDeck.length+"/52 in total")
   }
+}
+
+function lockGame(locked){
+  $gameRoot.classList.toggle("locked", locked)
+}
+
+function shortAddress(address){
+  return `${address.slice(0,4)}...${address.slice(-4)}`
+}
+
+async function connectWallet(){
+  if(!window.solana || !window.solana.isPhantom){
+    alert("Phantom wallet is required.")
+    return
+  }
+  try {
+    const response = await window.solana.connect()
+    walletConnected = true
+    currentWalletAddress = response.publicKey.toString()
+    $walletStatus.textContent = `Wallet: ${shortAddress(currentWalletAddress)} | ${network}`
+    lockGame(false)
+    await loadDashboard()
+    newGame()
+  } catch (error){
+    console.error(error)
+  }
+}
+
+function getQuestProgress(stats){
+  return QUESTS.map((quest) => {
+    const amount = stats?.questProgress?.[quest.id] || 0
+    return `${quest.label}: ${Math.min(amount, quest.target)}/${quest.target}`
+  })
+}
+
+function renderDashboard(profile){
+  $questList.innerHTML = ""
+  getQuestProgress(profile).forEach((line) => {
+    const li = document.createElement("li")
+    li.textContent = line
+    $questList.appendChild(li)
+  })
+
+  $leaderboardList.innerHTML = ""
+  ;(profile.leaderboard || []).slice(0, 10).forEach((entry) => {
+    const li = document.createElement("li")
+    li.textContent = `${shortAddress(entry.wallet)} — ${entry.bestTimeSeconds}s`
+    $leaderboardList.appendChild(li)
+  })
+
+  $bestTime.textContent = profile.bestTimeSeconds ? `${profile.bestTimeSeconds}s` : "-"
+  $totalWins.textContent = profile.totalWins || 0
+  $campaignEnds.textContent = profile.campaignEndsAt || "-"
+}
+
+async function api(path, options={}){
+  const headers = {"Content-Type":"application/json", ...(options.headers || {})}
+  const response = await fetch(`${secureApiBase}${path}`, { ...options, headers })
+  if(!response.ok) throw new Error(`API error ${response.status}`)
+  return response.json()
+}
+
+async function loadDashboard(){
+  if(!currentWalletAddress) return
+  try {
+    const profile = await api(`/api/profile/${currentWalletAddress}?network=${network}`)
+    renderDashboard(profile)
+  } catch (error){
+    console.warn("Dashboard unavailable", error)
+  }
+}
+
+async function recordGameResult(won){
+  if(!currentWalletAddress || !gameStartedAt) return
+  const durationSeconds = Math.max(1, Math.round((Date.now() - gameStartedAt)/1000))
+  try {
+    await api('/api/game-result', { method: 'POST', body: JSON.stringify({ wallet: currentWalletAddress, network, won, durationSeconds }) })
+    await loadDashboard()
+  } catch (error){
+    console.warn("Failed to record game", error)
+  }
+}
+
+async function handleWin(){
+  await recordGameResult(true)
+  try {
+    await api('/api/reward', { method: 'POST', body: JSON.stringify({ wallet: currentWalletAddress, network }) })
+  } catch (error){
+    console.warn("Reward call failed", error)
+  }
+}
+
+async function purchaseCustomization(type, value, priceSol){
+  if(!walletConnected){
+    alert("Connect wallet first")
+    return
+  }
+  const transactionReference = `simulated-${Date.now()}`
+  try {
+    await api('/api/customization/purchase', { method: 'POST', body: JSON.stringify({ wallet: currentWalletAddress, network, type, value, priceSol, transactionReference }) })
+    applyCustomization(type, value)
+  } catch (error){
+    console.warn("Purchase failed", error)
+  }
+}
+
+function applyCustomization(type, value){
+  if(type === 'background' && value){
+    document.body.style.backgroundImage = `url(${value})`
+  }
+  if(type === 'font' && value){
+    document.body.style.fontFamily = value
+  }
+  if(type === 'dark_mode'){
+    document.body.classList.toggle('dark-mode', true)
+  }
+  if(type === 'card_back' && value){
+    localStorage.setItem('custom-card-back', value)
+  }
+}
+
+function wireCustomizationControls(){
+  document.querySelector('#buy-card-back-btn').addEventListener('click', () => {
+    purchaseCustomization('card_back', document.querySelector('#card-back-url').value, 0.01)
+  })
+  document.querySelector('#buy-background-btn').addEventListener('click', () => {
+    purchaseCustomization('background', document.querySelector('#background-url').value, 0.01)
+  })
+  document.querySelector('#buy-font-btn').addEventListener('click', () => {
+    purchaseCustomization('font', document.querySelector('#font-style-select').value, 0.005)
+  })
+  document.querySelector('#buy-dark-mode-btn').addEventListener('click', () => {
+    purchaseCustomization('dark_mode', 'enabled', 0.005)
+  })
+}
+
+function bootSolanaMode(){
+  lockGame(true)
+  wireCustomizationControls()
+  $connectWalletBtn.addEventListener('click', connectWallet)
+  $networkSelect.addEventListener('change', async (event) => {
+    network = event.target.value
+    if(walletConnected) await loadDashboard()
+  })
+  $walletStatus.textContent = 'Wallet: not connected'
+}
+
+const originalNewGame = newGame
+newGame = function(){
+  gameStartedAt = Date.now()
+  return originalNewGame()
 }
