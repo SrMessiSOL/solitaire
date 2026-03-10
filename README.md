@@ -26,6 +26,8 @@ python3 -m http.server 8080
 
 Open `http://localhost:8080`.
 
+If you only run the static server (`python -m http.server`) and skip `node server.js`, the game now automatically switches to **local fallback mode** (quests/metrics saved in browser storage) instead of failing with connection errors.
+
 
 Welcome to my new project! This time I'm making something I wanted to create since I started learning about DOM methods: a classic klondike Solitaire. I've been prototyping a little before creating this repository, and I think I came with a good enough way to recreate this game.
 

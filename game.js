@@ -23,13 +23,73 @@ let walletConnected = false
 let currentWalletAddress = null
 let network = "devnet"
 let gameStartedAt = null
-let secureApiBase = "http://localhost:8787"
+let secureApiBase = resolveApiBase()
+let apiAvailabilityChecked = false
+let apiAvailable = false
 
 const QUESTS = [
   { id: "daily_win", label: "Daily: Win 1 game", cadence: "daily", target: 1 },
   { id: "weekly_wins", label: "Weekly: Win 3 games", cadence: "weekly", target: 3 },
   { id: "monthly_wins", label: "Monthly: Win 10 games", cadence: "monthly", target: 10 }
 ]
+
+function resolveApiBase(){
+  const queryApi = new URLSearchParams(window.location.search).get("api")
+  if(queryApi) return queryApi
+  if(window.location.protocol === "file:") return "http://localhost:8787"
+  return `${window.location.protocol}//${window.location.hostname}:8787`
+}
+
+function loadLocalProfiles(){
+  try {
+    return JSON.parse(localStorage.getItem("solitaire-local-profiles") || "{}")
+  } catch {
+    return {}
+  }
+}
+
+function saveLocalProfiles(profiles){
+  localStorage.setItem("solitaire-local-profiles", JSON.stringify(profiles))
+}
+
+function getLocalProfile(wallet){
+  const profiles = loadLocalProfiles()
+  if(!profiles[wallet]){
+    const campaignEndsAt = new Date(Date.now() + 1000*60*60*24*60).toISOString().split("T")[0]
+    profiles[wallet] = {
+      wallet,
+      totalWins: 0,
+      bestTimeSeconds: null,
+      questProgress: { daily_win: 0, weekly_wins: 0, monthly_wins: 0 },
+      leaderboard: [],
+      campaignEndsAt
+    }
+    saveLocalProfiles(profiles)
+  }
+  return profiles[wallet]
+}
+
+function saveLocalProfile(profile){
+  const profiles = loadLocalProfiles()
+  profiles[profile.wallet] = profile
+  const leaderboard = Object.values(profiles)
+    .filter((entry) => entry.bestTimeSeconds !== null)
+    .sort((a,b) => a.bestTimeSeconds - b.bestTimeSeconds)
+    .slice(0, 10)
+    .map((entry) => ({ wallet: entry.wallet, bestTimeSeconds: entry.bestTimeSeconds }))
+  Object.values(profiles).forEach((entry) => { entry.leaderboard = leaderboard })
+  saveLocalProfiles(profiles)
+}
+
+function updateWalletStatus(){
+  const statusCore = walletConnected && currentWalletAddress
+    ? `Wallet: ${shortAddress(currentWalletAddress)} | ${network}`
+    : "Wallet: not connected"
+  const backendState = apiAvailable
+    ? "Secure API: connected"
+    : "Secure API: offline (local fallback mode)"
+  $walletStatus.textContent = `${statusCore} • ${backendState}`
+}
 
 //query selectors
 //card piles related
@@ -832,13 +892,26 @@ async function connectWallet(){
     const response = await window.solana.connect()
     walletConnected = true
     currentWalletAddress = response.publicKey.toString()
-    $walletStatus.textContent = `Wallet: ${shortAddress(currentWalletAddress)} | ${network}`
+    await ensureApiAvailability()
+    updateWalletStatus()
     lockGame(false)
     await loadDashboard()
     newGame()
   } catch (error){
     console.error(error)
   }
+}
+
+async function ensureApiAvailability(){
+  if(apiAvailabilityChecked) return apiAvailable
+  apiAvailabilityChecked = true
+  try {
+    const response = await fetch(`${secureApiBase}/api/profile/ping-wallet`, { method: "GET" })
+    apiAvailable = response.ok
+  } catch {
+    apiAvailable = false
+  }
+  return apiAvailable
 }
 
 function getQuestProgress(stats){
@@ -869,6 +942,8 @@ function renderDashboard(profile){
 }
 
 async function api(path, options={}){
+  await ensureApiAvailability()
+  if(!apiAvailable) throw new Error("API unavailable")
   const headers = {"Content-Type":"application/json", ...(options.headers || {})}
   const response = await fetch(`${secureApiBase}${path}`, { ...options, headers })
   if(!response.ok) throw new Error(`API error ${response.status}`)
@@ -881,8 +956,10 @@ async function loadDashboard(){
     const profile = await api(`/api/profile/${currentWalletAddress}?network=${network}`)
     renderDashboard(profile)
   } catch (error){
-    console.warn("Dashboard unavailable", error)
+    const profile = getLocalProfile(currentWalletAddress)
+    renderDashboard(profile)
   }
+  updateWalletStatus()
 }
 
 async function recordGameResult(won){
@@ -890,19 +967,27 @@ async function recordGameResult(won){
   const durationSeconds = Math.max(1, Math.round((Date.now() - gameStartedAt)/1000))
   try {
     await api('/api/game-result', { method: 'POST', body: JSON.stringify({ wallet: currentWalletAddress, network, won, durationSeconds }) })
-    await loadDashboard()
   } catch (error){
-    console.warn("Failed to record game", error)
+    const profile = getLocalProfile(currentWalletAddress)
+    if(won){
+      profile.totalWins += 1
+      if(profile.bestTimeSeconds === null || durationSeconds < profile.bestTimeSeconds){
+        profile.bestTimeSeconds = durationSeconds
+      }
+      profile.questProgress.daily_win = Math.min(1, profile.questProgress.daily_win + 1)
+      profile.questProgress.weekly_wins = Math.min(3, profile.questProgress.weekly_wins + 1)
+      profile.questProgress.monthly_wins = Math.min(10, profile.questProgress.monthly_wins + 1)
+      saveLocalProfile(profile)
+    }
   }
+  await loadDashboard()
 }
 
 async function handleWin(){
   await recordGameResult(true)
   try {
     await api('/api/reward', { method: 'POST', body: JSON.stringify({ wallet: currentWalletAddress, network }) })
-  } catch (error){
-    console.warn("Reward call failed", error)
-  }
+  } catch (error) {}
 }
 
 async function purchaseCustomization(type, value, priceSol){
@@ -913,10 +998,8 @@ async function purchaseCustomization(type, value, priceSol){
   const transactionReference = `simulated-${Date.now()}`
   try {
     await api('/api/customization/purchase', { method: 'POST', body: JSON.stringify({ wallet: currentWalletAddress, network, type, value, priceSol, transactionReference }) })
-    applyCustomization(type, value)
-  } catch (error){
-    console.warn("Purchase failed", error)
-  }
+  } catch (error) {}
+  applyCustomization(type, value)
 }
 
 function applyCustomization(type, value){
@@ -952,12 +1035,14 @@ function wireCustomizationControls(){
 function bootSolanaMode(){
   lockGame(true)
   wireCustomizationControls()
+  ensureApiAvailability().then(updateWalletStatus)
   $connectWalletBtn.addEventListener('click', connectWallet)
   $networkSelect.addEventListener('change', async (event) => {
     network = event.target.value
+    updateWalletStatus()
     if(walletConnected) await loadDashboard()
   })
-  $walletStatus.textContent = 'Wallet: not connected'
+  updateWalletStatus()
 }
 
 const originalNewGame = newGame
