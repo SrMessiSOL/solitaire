@@ -1,4 +1,32 @@
 # solitaire
+## Solana mode (new)
+
+This project now includes a **Solana-ready gameplay mode**:
+
+- Wallet connection is required before the board is unlocked.
+- Network switch:
+  - **Devnet** uses SOL-denominated actions.
+  - **Mainnet-beta** is prepared for SPL-token based economy flows.
+- Added player dashboard with:
+  - Daily / weekly / monthly quests
+  - Best-time metrics
+  - 60-day campaign leaderboard
+- Added paid customization flows for card back, table background, font style and dark mode unlocks.
+- Added a secure API server (`server.js`) backed by encrypted-at-rest storage (`server/db/secureStore.js`) using AES-256-GCM.
+
+### Run
+
+```bash
+# terminal 1
+SECURE_DB_KEY="replace-with-a-strong-key" node server.js
+
+# terminal 2
+python3 -m http.server 8080
+```
+
+Open `http://localhost:8080`.
+
+
 Welcome to my new project! This time I'm making something I wanted to create since I started learning about DOM methods: a classic klondike Solitaire. I've been prototyping a little before creating this repository, and I think I came with a good enough way to recreate this game.
 
 ## play the game:
