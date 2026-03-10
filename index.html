@@ -6,38 +6,86 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="style.css">
   <link rel="shortcut icon" href="#" type="image/x-icon">
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
   <script src="game.js" defer></script>
-  <title>Solitaire</title>
+  <title>Solitaire x Solana</title>
 </head>
 <body>
+  <header class="top-bar">
+    <h1>Solitaire x Solana</h1>
+    <div class="wallet-controls">
+      <select id="network-select">
+        <option value="devnet">Devnet (SOL)</option>
+        <option value="mainnet-beta">Mainnet (SPL Token)</option>
+      </select>
+      <button id="connect-wallet-btn">Connect Wallet</button>
+      <span id="wallet-status">Wallet: not connected</span>
+    </div>
+  </header>
+
+  <section class="dashboard" id="player-dashboard">
+    <h2>Player Dashboard</h2>
+    <div class="dashboard-grid">
+      <div>
+        <h3>Quests</h3>
+        <ul id="quest-list"></ul>
+      </div>
+      <div>
+        <h3>Player Metrics</h3>
+        <p>Best time: <span id="best-time">-</span></p>
+        <p>Wins: <span id="total-wins">0</span></p>
+        <p>Campaign ends: <span id="campaign-ends">-</span></p>
+      </div>
+      <div>
+        <h3>60-Day Leaderboard</h3>
+        <ol id="leaderboard-list"></ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="customization-panel">
+    <h2>Paid Customization</h2>
+    <div class="customization-grid">
+      <label>Card Back Image URL <input id="card-back-url" placeholder="https://..." /></label>
+      <button id="buy-card-back-btn">Buy Card Back (0.01 SOL)</button>
+      <label>Background Image URL <input id="background-url" placeholder="https://..." /></label>
+      <button id="buy-background-btn">Buy Background (0.01 SOL)</button>
+      <label>Font Style
+        <select id="font-style-select">
+          <option value="inherit">Default</option>
+          <option value="Georgia, serif">Georgia</option>
+          <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+          <option value="'Courier New', monospace">Courier</option>
+        </select>
+      </label>
+      <button id="buy-font-btn">Buy Font Style (0.005 SOL)</button>
+      <button id="buy-dark-mode-btn">Unlock Dark Mode (0.005 SOL)</button>
+    </div>
+  </section>
+
   <div class="full-screen-container hidden">
     <div class="prompt">
       <button class="btn-close">X</button>
       <div class="content-about hidden">
         <p>Game made by <a href="https://github.com/HectorVilas" target="_blank">HectorVilas</a>
           in HTML, CSS and JavaScript</p>
-        <p><a href="https://pixabay.com/vectors/card-deck-deck-cards-playing-cards-161536/" target="_blank">
-          Deck</a> images by OpenClipart-Vectors from Pixabay</p>
-        <p><a href="https://pixabay.com/vectors/atlasnye-deck-playing-cards-game-884206/" target="_blank">
-          Alternative russian card deck</a> images by WikimediaImages from Pixabay</p>
-        <p><a href="https://hipwallpaper.com/view/NWa1EU" target="_blank">Poker Table Top Background</a>
-          from hipwallpaper.com</p>
-        <p><a href="https://pixabay.com/illustrations/joker-playing-cards-fun-play-throw-6230505/" target="_blank">
-          Joker</a> image in menu by TAMGRA from Pixabay</p>
-        </div>
-        <div class="content-win hidden">
-          <p>YOU</p><p>WIN</p>
-        </div>
+      </div>
+      <div class="content-win hidden">
+        <p>YOU</p><p>WIN</p>
+      </div>
     </div>
   </div>
-  <button class="btn-gear"><img src="./media/images/hud/gear.svg" target="_blank"></button>
+
+  <button class="btn-gear"><img src="./media/images/hud/gear.svg"></button>
   <div class="menu">
     <button class="btn-restart"><img src="./media/images/hud/restart.svg"></button>
     <button class="btn-design"><img src="./media/images/hud/design.svg"></button>
     <button class="btn-about">¿ ?</button>
   </div>
+
   <div class="moving-cards hidden"></div>
-  <div class="play-area">
+  <div class="play-area locked" id="game-root">
+    <div class="wallet-required">Connect a Solana wallet to play.</div>
     <div id="stock"></div>
     <div id="waste"></div>
     <div id="info-space"></div>
