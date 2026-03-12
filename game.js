@@ -20,6 +20,7 @@ let table = {
 }
 
 let walletConnected = false
+let gameplayUnlocked = false
 let currentWalletAddress = null
 let network = "devnet"
 let gameStartedAt = null
@@ -84,7 +85,7 @@ function saveLocalProfile(profile){
 function updateWalletStatus(){
   const statusCore = walletConnected && currentWalletAddress
     ? `Wallet: ${shortAddress(currentWalletAddress)} | ${network}`
-    : "Wallet: not connected"
+    : (gameplayUnlocked ? "Wallet: guest mode" : "Wallet: not connected")
   const backendState = apiAvailable
     ? "Secure API: connected"
     : "Secure API: offline (local fallback mode)"
@@ -121,6 +122,7 @@ const $leaderboardList = document.querySelector("#leaderboard-list")
 const $bestTime = document.querySelector("#best-time")
 const $totalWins = document.querySelector("#total-wins")
 const $campaignEnds = document.querySelector("#campaign-ends")
+const $playOfflineBtn = document.querySelector("#play-offline-btn")
 
 $foundations.forEach(found => foundIDs.push(found.id))
 $tableaus.forEach(tab => tabIDs.push(tab.id))
@@ -794,7 +796,7 @@ $btnGear.addEventListener("click", () => {
 
 $btnRestart.addEventListener("click", () => {
   $menu.classList.toggle("menu-show")
-  if(walletConnected) newGame()
+  if(gameplayUnlocked) newGame()
 })
 
 $btnDesign.addEventListener("click", () =>{
@@ -812,7 +814,7 @@ $btnClose.addEventListener("click", promptAction)
 
 //mouse events on window
 window.onmousedown = () => {
-  if(!walletConnected) return
+  if(!gameplayUnlocked) return
   isMouseDown = true
   checkDeck()
 }
@@ -891,6 +893,7 @@ async function connectWallet(){
   try {
     const response = await window.solana.connect()
     walletConnected = true
+    gameplayUnlocked = true
     currentWalletAddress = response.publicKey.toString()
     await ensureApiAvailability()
     updateWalletStatus()
@@ -992,7 +995,7 @@ async function handleWin(){
 
 async function purchaseCustomization(type, value, priceSol){
   if(!walletConnected){
-    alert("Connect wallet first")
+    alert("Connect wallet first (guest mode cannot buy on-chain customizations)")
     return
   }
   const transactionReference = `simulated-${Date.now()}`
@@ -1032,9 +1035,18 @@ function wireCustomizationControls(){
   })
 }
 
+function startGuestMode(){
+  if(gameplayUnlocked) return
+  gameplayUnlocked = true
+  lockGame(false)
+  updateWalletStatus()
+  newGame()
+}
+
 function bootSolanaMode(){
   lockGame(true)
   wireCustomizationControls()
+  $playOfflineBtn.addEventListener("click", startGuestMode)
   ensureApiAvailability().then(updateWalletStatus)
   $connectWalletBtn.addEventListener('click', connectWallet)
   $networkSelect.addEventListener('change', async (event) => {

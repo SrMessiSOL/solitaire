@@ -109,16 +109,29 @@ button { cursor: pointer; }
   padding: 1em;
   position: relative;
 }
-.play-area.locked { pointer-events: none; filter: grayscale(0.7) brightness(0.7); }
+.play-area.locked { filter: grayscale(0.7) brightness(0.7); }
+.play-area.locked > :not(.wallet-required) { pointer-events: none; }
 .wallet-required {
   display: none;
   position: absolute;
   inset: 0;
   place-items: center;
   text-align: center;
-  font-size: 1.4rem;
+  font-size: 1.15rem;
   z-index: 4;
   background: rgba(0,0,0,0.7);
+}
+.wallet-required-content {
+  display: grid;
+  gap: .75rem;
+  justify-items: center;
+  max-width: 520px;
+  padding: 1rem;
+}
+#play-offline-btn {
+  background: #1b8f4d;
+  color: #fff;
+  font-weight: 700;
 }
 .play-area.locked .wallet-required { display: grid; }
 .play-area > div { display: flex; }
